@@ -4,6 +4,7 @@ import javax.sound.midi.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.*;
+import java.io.*;
 
 /**
  * Проектируем GUI, который будет иметь 256 снятых флажков(JCheckBox),
@@ -95,6 +96,14 @@ public class BeatBox{
     JButton downTempo = new JButton("Tempo Down");
     downTempo.addActionListener(new MyDownTempoListener());
     buttonBox.add(downTempo);
+    
+    JButton serializeIt = new JButton("serializeIt");
+    serializeIt.addActionListener(new MySendListener());
+    buttonBox.add(serializeIt);
+    
+    JButton restore = new JButton("restore");
+    restore.addActionListener(new MyReadInListener());
+    buttonBox.add(restore);
 
     Box nameBox = new Box(BoxLayout.Y_AXIS);
     for(int i = 0; i < 16; i++){
@@ -190,6 +199,35 @@ public class BeatBox{
     ex.printStackTrace();
     }
   }
+  
+  /**
+   * метод создает события для одного инструмента за каждый проход цикла для всех 16 тактов
+   * можно получить int[] для Bass Drum и каждый элемент массива будет содержать либо клавишу этого инструмента либо 0
+   * если это 0, то инструмент не должен играть на текущем такте
+   * иначе нужно создать событие и добавить его в дорожку
+   */
+  public void makeTracks(int[] list){
+    for(int i = 0; i < 16; i++){
+      int key = list[i];
+
+      if(key != 0){
+        /*создаем события вкл и выкл и добавляем их в дорожку*/
+        track.add(makeEvent(144, 9, key, 100, i));
+        track.add(makeEvent(128, 9, key, 100, i + 1));
+      }
+    }
+  }
+  public MidiEvent makeEvent(int comd, int chan, int one, int two, int tick){
+    MidiEvent event = null;
+    try{
+      ShortMessage a = new ShortMessage();
+      a.setMessage(comd, chan, one, two);
+      event = new MidiEvent(a, tick);
+    }catch(Exception ex){
+      ex.printStackTrace();
+    }
+    return event;
+  }
 
   /**
    * ВНУТРЕННИЕ КЛАССЫ
@@ -221,33 +259,63 @@ public class BeatBox{
     sequencer.setTempoFactor((float) (tempoFactor * .97));
     }
   }
-
-  /**
-   * метод создает события для одного инструмента за каждый проход цикла для всех 16 тактов
-   * можно получить int[] для Bass Drum и каждый элемент массива будет содержать либо клавишу этого инструмента либо 0
-   * если это 0, то инструмент не должен играть на текущем такте
-   * иначе нужно создать событие и добавить его в дорожку
-   */
-  public void makeTracks(int[] list){
-    for(int i = 0; i < 16; i++){
-      int key = list[i];
-
-      if(key != 0){
-        /*создаем события вкл и выкл и добавляем их в дорожку*/
-        track.add(makeEvent(144, 9, key, 100, i));
-        track.add(makeEvent(128, 9, key, 100, i + 1));
+  
+  /*
+ * внутренний класс внутри кода BeatBox для кнопки serializeIt, сериализующей состояния флажков
+ */
+  public class MySendListener implements ActionListener{
+    public void actionPerformed(ActionEvent ev){
+      //создаем булев массив для жранения состояния каждого флажка
+      boolean[] checkboxState = new boolean[256];
+      //пробегаем checkboxList,содержащий состояние флажков, считываем состояния и добавляем полученные состояния в булев массив
+      for(int i = 0; i < 256; i++){
+        JCheckBox check = (JCheckBox) checkboxList.get(i);
+        if(check.isSelected()){
+          checkboxState[i] = true;
+        }
+      }
+      //сериализуем булев массив
+      try{
+        JFileChooser fileSave = new JFileChooser();
+        fileSave.showSaveDialog(theFrame);
+        FileOutputStream fileStream = new FileOutputStream(fileSave.getSelectedFile());//"BeatBox/Checkbox.ser"));
+        ObjectOutputStream os = new ObjectOutputStream(fileStream);
+        os.writeObject(checkboxState);
+      }catch(Exception ex){
+        ex.printStackTrace();
       }
     }
   }
-  public MidiEvent makeEvent(int comd, int chan, int one, int two, int tick){
-    MidiEvent event = null;
-    try{
-      ShortMessage a = new ShortMessage();
-      a.setMessage(comd, chan, one, two);
-      event = new MidiEvent(a, tick);
-    }catch(Exception ex){
-      ex.printStackTrace();
+
+/*
+ * внутренний класс внутри кода BeatBox для кнопки restore, десериализующей состояния флажков
+ */
+  public class MyReadInListener implements ActionListener{
+
+    public void actionPerformed(ActionEvent ev){
+      boolean[] checkboxState = null;
+      //считываем объект из файла и определяем его как булев массив
+      try{
+        JFileChooser fileRead = new JFileChooser();
+        fileRead.showOpenDialog(theFrame);
+        FileInputStream fileIn = new FileInputStream(fileRead.getSelectedFile());//"BeatBox/Checkbox.ser"));
+        ObjectInputStream is = new ObjectInputStream(fileIn);
+        checkboxState = (boolean[]) is.readObject();
+      }catch(Exception ex){
+        ex.printStackTrace();
+      }
+      //восстанавливаем состояние каждого флажка в ArrayList, содержащий обеъкты JCheckBox
+      for(int i = 0; i < 256; i++){
+        JCheckBox check = (JCheckBox) checkboxList.get(i);
+        if(checkboxState[i]){
+          check.setSelected(true);
+        }else{
+          check.setSelected(false);
+        }
+      }
+      //останавливаем проигрываение мелодии и восстанавливаем последовательность, используя новые состояния флажков в ArrayList
+      sequencer.stop();
+      buildTrackAndStart();
     }
-    return event;
   }
 }
